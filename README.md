@@ -16,3 +16,8 @@ First, you run the robot code on the robot "robot_python_code.py". Just copy and
 I didn't do anything novel here, just piecing together stuff from here and there. :)
 
 Enjoy!
+
+Credits:
+gamepad code: https://stackoverflow.com/a/66867816/3105668
+receiver code: https://gist.github.com/antonvh/aca9e9a32aaebe337af3fb1a6f2712aa
+Bleak UART example code: https://github.com/hbldh/bleak/blob/develop/examples/uart_service.py
