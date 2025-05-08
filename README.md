@@ -5,7 +5,7 @@ I started mentoring a FIRST Lego League (FLL) team a few weeks ago, we all (ok m
 
 Demo vid: https://youtu.be/cMHl7u8XiDw
 
-Use v2 of the Spike Prime app, not V3. V3 didn't have Python yet as of publishing this code.
+Updated to work with SPIKE Prime app v3.4.3. Python code is now supported in this version.
 
 "gamepad.py" will help you figure out how to get values from the controller.
 

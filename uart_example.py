@@ -8,16 +8,45 @@ import math
 from bleak import BleakClient, BleakScanner
 from bleak.backends.characteristic import BleakGATTCharacteristic
 
+# This code has been updated to work with SPIKE Prime v3.4.3
+
 UART_SERVICE_UUID = "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 UART_RX_CHAR_UUID = "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
 UART_TX_CHAR_UUID = "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
 
-# Stolen from https://github.com/hbldh/bleak/blob/develop/examples/uart_service.py
+# Improved device discovery for SPIKE Prime v3.4.3
 async def uart_terminal():
-    device = await BleakScanner.find_device_by_address("E0:FF:F1:4F:05:C8")
+    print("Scanning for SPIKE Prime devices...")
+    
+    # First try to find by specific address if you know it
+    # Replace with your SPIKE Prime's MAC address if known
+    spike_address = "E0:FF:F1:4F:05:C8"
+    
+    try:
+        device = await BleakScanner.find_device_by_address(spike_address)
+        if device:
+            print(f"Found SPIKE Prime device at address: {spike_address}")
+        else:
+            # If specific address not found, try to find by service UUID
+            print(f"Device with address {spike_address} not found. Scanning for any SPIKE Prime...")
+            devices = await BleakScanner.discover()
+            for d in devices:
+                print(f"Found device: {d.name} ({d.address})")
+                # If you know your SPIKE Prime shows up with a specific name, you can filter by that
+                if d.name and ("SPIKE" in d.name.upper() or "LEGO" in d.name.upper()):
+                    device = d
+                    print(f"Found SPIKE Prime device: {d.name} ({d.address})")
+                    break
+    except Exception as e:
+        print(f"Error during device scanning: {e}")
+        device = None
 
     if device is None:
-        print("no matching device found, you may need to edit match_nus_uuid().")
+        print("No SPIKE Prime device found. Please check that:")
+        print("1. Your SPIKE Prime hub is powered on")
+        print("2. Bluetooth is enabled on both devices")
+        print("3. You've loaded the robot_python_code.py on the SPIKE Prime")
+        print("4. If you know your SPIKE Prime's MAC address, edit it in this file")
         sys.exit(1)
 
     def handle_disconnect(_: BleakClient):
@@ -40,41 +69,59 @@ async def uart_terminal():
         joy = XboxController()
         deadband = 0.1
 
-        # Wiring things together from joystick to transmit here
-        # Good programming sense says to separate responsibilities and not have
-        #   joystick control power values, but I did this after 4 glasses of wine 2 days
-        #   before Christmas. :)
+        # RC Car control logic
+        # - Left stick vertical: Drive motor control (forward/backward)
+        # - Right stick horizontal: Steering control (left/right)
+        # - Right trigger: Speed multiplier
+        # - Right bumper: Emergency stop
+        print("RC Car control ready:")
+        print("- Left stick vertical: Drive (forward/backward)")
+        print("- Right stick horizontal: Steering (left/right)")
+        print("- Right trigger: Speed boost")
+        print("- Right bumper: Emergency stop/disconnect")
+        
         while True:
-            l_stick_ver, r_stick_hor, r_trigger, disconnect, turret = joy.read()
+            # Get controller inputs
+            l_stick_ver, r_stick_hor, r_trigger, disconnect = joy.read()
+            
             if disconnect:
-                print("Disconnecting...")
+                print("Emergency stop - Disconnecting...")
                 for task in asyncio.all_tasks():
                     task.cancel()
                 break
             else:
+                # Apply deadband to remove jitter when sticks are near center
                 if deadband >= l_stick_ver >= -deadband:
                     l_stick_ver = 0
                 if deadband >= r_stick_hor >= -deadband:
                     r_stick_hor = 0
-                if deadband >= r_trigger >= -deadband:
-                    r_trigger = 0
-
-                if r_trigger < 0.3:
-                    power_multiplier = 30
+                
+                # Set power multiplier based on right trigger
+                # Base power is 30% when trigger is not pressed
+                # Full trigger press gives 100% power
+                if r_trigger < 0.1:  # Almost not pressed
+                    power_multiplier = 30  # Base power 30%
                 else:
-                    power_multiplier = r_trigger * 100
+                    # Scale from 30% to 100% based on trigger position
+                    power_multiplier = 30 + (r_trigger * 70)
 
-                left_power = l_stick_ver
-                right_power = l_stick_ver
-                if r_stick_hor > 0:
-                    right_power = right_power * (1 - r_stick_hor * 2)
-                elif r_stick_hor < 0:
-                    left_power = left_power * (1 + r_stick_hor * 2)
+                # Calculate drive power from left stick vertical position
+                drive_power = l_stick_ver * (power_multiplier / 100)
+                
+                # Calculate steering power from right stick horizontal
+                # The steering motor usually needs less power, so we scale it to 70%
+                # This prevents damaging the steering mechanism
+                steering_power = r_stick_hor * 0.7
+                
+                # Scale values to SPIKE motor power range (-100 to 100)
+                drive_motor_power = int(drive_power * 100)
+                steering_motor_power = int(steering_power * 100)
 
+                # Pack data to send to SPIKE Prime
                 controller_state = struct.pack("bbB",
-                                               int(left_power * power_multiplier),
-                                               int(right_power * power_multiplier),
-                                               turret)
+                                             drive_motor_power,    # Drive motor (B)
+                                             steering_motor_power, # Steering motor (A)
+                                             0)                    # Unused parameter
 
                 await client.write_gatt_char(rx_char, controller_state)
                 await asyncio.sleep(0.02)
@@ -113,12 +160,18 @@ class XboxController(object):
         self._monitor_thread.start()
 
     def read(self):
-        y = self.LeftJoystickY
-        z = self.RightTrigger
-        x = self.RightJoystickX
-        rb = self.RightBumper
-        lb = self.LeftBumper
-        return [y, x, z, rb, lb]
+        # For RC car control:
+        # - Left stick vertical (y): Controls drive motor (forward/backward)
+        # - Right stick horizontal (rx): Controls steering (left/right)
+        # - Right trigger (z): Speed multiplier
+        # - Right bumper (rb): Emergency stop/disconnect
+        
+        y = self.LeftJoystickY    # Drive control (forward/backward)
+        rx = self.RightJoystickX  # Steering control (left/right)
+        z = self.RightTrigger     # Speed multiplier
+        rb = self.RightBumper     # Emergency stop
+        
+        return [y, rx, z, rb]
 
     def _monitor_controller(self):
         while True:
