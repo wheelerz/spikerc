@@ -106,12 +106,16 @@ async def uart_terminal():
                     power_multiplier = 30 + (r_trigger * 70)
 
                 # Calculate drive power from left stick vertical position
+                # With PS5 controller, we invert the drive_power for correct direction
                 drive_power = l_stick_ver * (power_multiplier / 100)
                 
                 # Calculate steering power from right stick horizontal
                 # The steering motor usually needs less power, so we scale it to 70%
                 # This prevents damaging the steering mechanism
                 steering_power = r_stick_hor * 0.7
+                
+                # Debug output for controller values
+                print(f"Drive: {drive_power:.2f}, Steer: {steering_power:.2f}, Boost: {power_multiplier:.0f}%   ", end="\r")
                 
                 # Scale values to SPIKE motor power range (-100 to 100)
                 drive_motor_power = int(drive_power * 100)
@@ -166,7 +170,7 @@ class XboxController(object):
         # - Right trigger (z): Speed multiplier
         # - Right bumper (rb): Emergency stop/disconnect
         
-        y = self.LeftJoystickY    # Drive control (forward/backward)
+        y = -self.LeftJoystickY   # Drive control (forward/backward) - invert Y axis so up is forward
         rx = self.RightJoystickX  # Steering control (left/right)
         z = self.RightTrigger     # Speed multiplier
         rb = self.RightBumper     # Emergency stop
@@ -174,29 +178,48 @@ class XboxController(object):
         return [y, rx, z, rb]
 
     def _monitor_controller(self):
+        # Dictionary for debug purposes - helps identify which events have been caught
+        button_states = {}
+        
         while True:
-            events = get_gamepad()
-            for event in events:
-                if event.code == 'ABS_Y':
-                    self.LeftJoystickY = event.state / XboxController.MAX_JOY_VAL  # normalize between -1 and 1
-                elif event.code == 'ABS_X':
-                    self.LeftJoystickX = event.state / XboxController.MAX_JOY_VAL  # normalize between -1 and 1
-                elif event.code == 'ABS_RY':
-                    self.RightJoystickY = event.state / XboxController.MAX_JOY_VAL  # normalize between -1 and 1
-                elif event.code == 'ABS_RX':
-                    self.RightJoystickX = event.state / XboxController.MAX_JOY_VAL  # normalize between -1 and 1
-                elif event.code == 'ABS_Z':
-                    self.LeftTrigger = event.state / XboxController.MAX_TRIG_VAL  # normalize between 0 and 1
-                elif event.code == 'ABS_RZ':
-                    self.RightTrigger = event.state / XboxController.MAX_TRIG_VAL  # normalize between 0 and 1
-                elif event.code == 'BTN_TL':
-                    self.LeftBumper = event.state
-                elif event.code == 'BTN_TR':
-                    self.RightBumper = event.state
-                elif event.code == 'BTN_SOUTH':
-                    self.A = event.state
-                elif event.code == 'BTN_NORTH':
-                    self.Y = event.state  # previously switched with X
+            try:
+                events = get_gamepad()
+                for event in events:
+                    # Store all events for debugging
+                    button_states[event.code] = event.state
+                    
+                    # PS5/Xbox mappings - handle both controller types
+                    # Left and right analog sticks
+                    if event.code == 'ABS_Y':
+                        self.LeftJoystickY = event.state / XboxController.MAX_JOY_VAL  # normalize between -1 and 1
+                    elif event.code == 'ABS_X':
+                        self.LeftJoystickX = event.state / XboxController.MAX_JOY_VAL  # normalize between -1 and 1
+                    elif event.code == 'ABS_RY':
+                        self.RightJoystickY = event.state / XboxController.MAX_JOY_VAL  # normalize between -1 and 1
+                    elif event.code == 'ABS_RX':
+                        self.RightJoystickX = event.state / XboxController.MAX_JOY_VAL  # normalize between -1 and 1
+                    
+                    # Triggers - PS5 often uses ABS_Z and ABS_RZ
+                    elif event.code == 'ABS_Z':
+                        self.LeftTrigger = event.state / XboxController.MAX_TRIG_VAL  # normalize between 0 and 1
+                    elif event.code == 'ABS_RZ':
+                        self.RightTrigger = event.state / XboxController.MAX_TRIG_VAL  # normalize between 0 and 1
+                    
+                    # Main buttons - support both generic names and PS5-specific names
+                    elif event.code == 'BTN_SOUTH' or event.code == 'BTN_CROSS':
+                        self.A = event.state
+                    elif event.code == 'BTN_EAST' or event.code == 'BTN_CIRCLE':
+                        self.B = event.state
+                    elif event.code == 'BTN_NORTH' or event.code == 'BTN_TRIANGLE':
+                        self.Y = event.state
+                    elif event.code == 'BTN_WEST' or event.code == 'BTN_SQUARE':
+                        self.X = event.state
+                    
+                    # Shoulder buttons
+                    elif event.code == 'BTN_TL':
+                        self.LeftBumper = event.state
+                    elif event.code == 'BTN_TR':
+                        self.RightBumper = event.state
                 elif event.code == 'BTN_WEST':
                     self.X = event.state  # previously switched with Y
                 elif event.code == 'BTN_EAST':
