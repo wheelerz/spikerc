@@ -2,6 +2,7 @@
 # Fixes "Thread is configured for Windows GUI but callbacks are not working" error
 # Works by setting the correct threading model before imports
 
+import pygame
 import sys
 # Set threading model to MTA before importing pygame or bleak
 # This prevents the "Thread is configured for Windows GUI but callbacks are not working" error
@@ -9,7 +10,6 @@ sys.coinit_flags = 0  # Use Multi-Threaded Apartment (MTA) model instead of STA
 
 # Now we can safely import pygame and bleak
 import asyncio
-import pygame
 from bleak import BleakScanner, BleakClient
 
 # Nordic UART Service UUIDs
@@ -17,19 +17,12 @@ UART_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 UART_RX_CHAR_UUID = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"  # Write to this characteristic
 
 # Initialize pygame for controller
-pygame.init()
-pygame.joystick.init()
+
+sys.coinit_flags = 0  # Use Multi-Threaded Apartment (MTA) model instead of STA
 
 async def main():
-    # Initialize controller
-    if pygame.joystick.get_count() == 0:
-        print("No controllers found. Please connect a controller and try again.")
-        return
-        
-    controller = pygame.joystick.Joystick(0)
-    controller.init()
-    print(f"Controller connected: {controller.get_name()}")
-    
+   
+    sys.coinit_flags = 0  # Use Multi-Threaded Apartment (MTA) model instead of STA
     # Scan for devices - using the method that works for you
     print("Scanning for BLE devices...")
     devices = await BleakScanner.discover()
@@ -93,6 +86,17 @@ async def main():
             print("- Right stick horizontal: Steering (left/right)")
             print("- Right trigger: Speed boost")
             print("- Right bumper: Emergency stop/disconnect")
+            
+            pygame.init()
+            pygame.joystick.init()
+            # Initialize controller
+            if pygame.joystick.get_count() == 0:
+                print("No controllers found. Please connect a controller and try again.")
+                return
+        
+            controller = pygame.joystick.Joystick(0)
+            controller.init()
+            print(f"Controller connected: {controller.get_name()}")
             
             # Main control loop
             try:
